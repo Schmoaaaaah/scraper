@@ -1,4 +1,5 @@
 import os
+from time import sleep
 
 from mongodb import mongodb
 from insta import Instascrapertomongo
@@ -8,7 +9,9 @@ from environs import Env
 def main():
     env = Env()
     env.read_env()
-    instagram(env)
+    while True:
+        instagram(env)
+        sleep(86400)
     
 
 def instagram(env):
