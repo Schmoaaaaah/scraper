@@ -3,3 +3,6 @@ posts
 .env
 person.json
 venv
+json
+__pycache__
+.idea
