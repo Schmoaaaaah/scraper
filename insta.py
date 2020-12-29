@@ -10,32 +10,39 @@ def fixjsonoffollow(wrongdict):
     return listfollower
 
 
-class Instascrapertomongo():
+class Instascrapertofirebase():
     insta_instance = 0
 
     def __init__(self, instauser, instapas, db):
-        Instascrapertomongo.insta_instance += 1
+        Instascrapertofirebase.insta_instance += 1
         self.insta = Client()
         self.insta_user = instauser
         self.insta_pas = instapas
         self.insta.login(self.insta_user, self.insta_pas)
         self.userid = self.insta.user_id_from_username(self.insta_user)
         print("Created Instance number: " + str(
-            Instascrapertomongo.insta_instance) + " with Parameters User: " + self.insta_user + " Pas: " + self.insta_pas)
+            Instascrapertofirebase.insta_instance) + " with Parameters User: " + self.insta_user + " Pas: " + self.insta_pas)
         self.db = db
 
     def __del__(self):
-        Instascrapertomongo.insta_instance -= 1
+        Instascrapertofirebase.insta_instance -= 1
 
     def get_ownprofile(self):  # returns user profile as json
         print('Getting data for user: ' + self.insta_user)
         user = self.insta.user_info(self.userid).dict()
+        data = {
+            'pk': user['pk'],
+            'username': user['username'],
+            'name': user['full_name'],
+            'profilepic': user['profile_pic_url'],
+            'follower': user['follower_count'],
+            'bio': user['biography']
+        }
         print('Got userdata')
         collname = 'insta_' + self.insta_user + '_ownprofile'
-        coll = self.db[collname]
-        self.trydeletecoll(coll, collname)
-        coll.insert_one(user)
-        print("Inserted ownprofile in the database")
+        self.trydeletecoll(collname)
+        self.db.collection(collname).document(str(user['pk'])).set(data)
+        print("Inserted ownprofile with name: "+user['username']+" in the database")
         return user
 
     def get_followers(self):  # returns followers of user as json
@@ -44,10 +51,16 @@ class Instascrapertomongo():
         print('Got followers')
         followerlist = fixjsonoffollow(follower)
         collname = 'insta_' + self.insta_user + '_follower'
-        coll = self.db[collname]
-        self.trydeletecoll(coll, collname)
+        self.trydeletecoll(collname)
         for follow in followerlist:
-            coll.insert_one(follow)
+            data = {
+                'pk': follow['pk'],
+                'username': follow['username'],
+                'name': follow['full_name'],
+                'profilepic': follow['profile_pic_url']
+            }
+            self.db.collection(collname).document(str(follow['pk'])).set(data)
+            print("inserted row from follower: " + follow['username'])
         print("inserted follower of user in the database")
         return follower
 
@@ -57,10 +70,16 @@ class Instascrapertomongo():
         print('Got people you follow')
         followinglist = fixjsonoffollow(following)
         collname = 'insta_' + self.insta_user + '_following'
-        coll = self.db[collname]
-        self.trydeletecoll(coll, collname)
+        self.trydeletecoll(collname)
         for follow in followinglist:
-            coll.insert_one(follow)
+            data = {
+                'pk': follow['pk'],
+                'username': follow['username'],
+                'name': follow['full_name'],
+                'profilepic': follow['profile_pic_url']
+            }
+            self.db.collection(collname).document(str(follow['pk'])).set(data)
+            print("inserted row from followin: " + follow['username'])
         print("Inserted people that follow user in the database")
         return following
 
@@ -69,10 +88,22 @@ class Instascrapertomongo():
         posts = self.insta.user_medias(self.userid)
         print('got posts')
         collname = 'insta_' + self.insta_user + '_post'
-        coll = self.db[collname]
-        self.trydeletecoll(coll, collname)
+        self.trydeletecoll(collname)
         for media in posts:
-            coll.insert_one(media.dict())
+            dic = media.dict()
+            data = {
+                'pk': dic['pk'],
+                'caption': dic['caption_text'],
+                'commentscount': dic['comment_count'],
+                'likes': dic['like_count'],
+                'date': dic['taken_at'],
+                'resources': dic['resources'],
+                'thumbnail': dic['thumbnail_url'],
+                'video': dic['video_url'],
+                'videodur': dic['video_duration']
+            }
+            self.db.collection(collname).document(str(dic['pk'])).set(data)
+            print("Inserted row of post with caption: " + dic['caption_text'])
         print("inserted posts into the database")
         return posts
 
@@ -82,8 +113,10 @@ class Instascrapertomongo():
         self.get_following()
         self.get_posts()
 
-    def trydeletecoll(self, coll, collname):
+    def trydeletecoll(self, collname):
         try:
-            coll.drop()
+            docs = self.db.collection(collname).stream()
+            for doc in docs:
+                doc.reference.delete()
         except:
             print('Collum: ' + collname + ' doesn`t exist')
