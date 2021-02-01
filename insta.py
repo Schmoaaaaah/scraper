@@ -1,4 +1,16 @@
+import base64
+import json
+
 from instagrapi import Client
+
+from api import api
+
+
+def encodepicture(path):
+    with open(path, 'rb')as image_file:
+        encoded_image = base64.b64encode(image_file.read()).decode('utf-8')
+    print('converted profile pic: ' + str(encoded_image))
+    return encoded_image
 
 
 def fixjsonoffollow(wrongdict):
@@ -10,39 +22,62 @@ def fixjsonoffollow(wrongdict):
     return listfollower
 
 
-class Instascrapertofirebase():
+class Instascraper():
     insta_instance = 0
 
-    def __init__(self, instauser, instapas, db):
-        Instascrapertofirebase.insta_instance += 1
-        self.insta = Client()
+    def __init__(self, instauser, instapas):
+        Instascraper.insta_instance += 1
+        settings = {
+            "cookies": {},  # set here your saved cookies
+            "device_settings": {
+                "cpu": "h1",
+                "dpi": "640dpi",
+                "model": "h1",
+                "device": "RS988",
+                "resolution": "1440x2392",
+                "app_version": "173.0.0.21.120",
+                "manufacturer": "LGE/lge",
+                "version_code": "168361634",
+                "android_release": "11",
+                "android_version": 30
+            },
+            "user_agent": "Instagram 173.0.0.21.120 Android (30/11; ...DE; 168361634)"
+        }
+        self.insta = Client(settings)
         self.insta_user = instauser
         self.insta_pas = instapas
         self.insta.login(self.insta_user, self.insta_pas)
         self.userid = self.insta.user_id_from_username(self.insta_user)
         print("Created Instance number: " + str(
-            Instascrapertofirebase.insta_instance) + " with Parameters User: " + self.insta_user + " Pas: " + self.insta_pas)
-        self.db = db
+            Instascraper.insta_instance) + " with Parameters User: " + self.insta_user + " Pas: " + self.insta_pas)
+        self.db = api()
 
     def __del__(self):
-        Instascrapertofirebase.insta_instance -= 1
+        Instascraper.insta_instance -= 1
 
-    def get_ownprofile(self):  # returns user profile as json
+    def get_ownprofile(self):  # returns user profile as dict
         print('Getting data for user: ' + self.insta_user)
         user = self.insta.user_info(self.userid).dict()
+        print('start convert profilepic')
+        picturepath = self.insta.photo_download_by_url(user['profile_pic_url'], 'profilepic', './pictures')
+        try:
+            profilepic = {'files': ('profilepic.jpg', open(picturepath, 'rb'), 'image', {'uri': ''})}
+            r = api.request_post_img("upload", profilepic)
+        except Exception as e:
+            print(e)
+        print('Picture saved at: ' + str(picturepath))
         data = {
             'pk': user['pk'],
             'username': user['username'],
             'name': user['full_name'],
-            'profilepic': user['profile_pic_url'],
             'follower': user['follower_count'],
             'bio': user['biography']
         }
-        print('Got userdata')
-        collname = 'insta_' + self.insta_user + '_ownprofile'
-        self.trydeletecoll(collname)
-        self.db.collection(collname).document(str(user['pk'])).set(data)
-        print("Inserted ownprofile with name: "+user['username']+" in the database")
+        print('Got userdata: ' + str(data))
+        endpoint = 'Insta-users'
+        datalist = [data]
+        self.checkexisting(endpoint, 'pk', datalist)
+        print("Inserted ownprofile with name: " + user['username'] + " in the database")
         return user
 
     def get_followers(self):  # returns followers of user as json
@@ -113,10 +148,18 @@ class Instascrapertofirebase():
         self.get_following()
         self.get_posts()
 
-    def trydeletecoll(self, collname):
+    def checkexisting(self, endpoint, prop, data):
         try:
-            docs = self.db.collection(collname).stream()
-            for doc in docs:
-                doc.reference.delete()
-        except:
-            print('Collum: ' + collname + ' doesn`t exist')
+            for key in data:
+                print('looking for existing data!')
+                result = self.db.request_get(endpoint + '?' + prop + '_eq=' + str(key['pk']))
+                print('This is already there: ' + str(result))
+                if result == []:
+                    r = self.db.request_post(endpoint, json.dumps(key))
+                    print('Response: ' + str(r))
+                    print('dumped: ' + str(key))
+                else:
+                    r = self.db.request_put(endpoint, result['id'], json.dumps(key))
+                    print('Response: ' + str(r))
+        except Exception as e:
+            print('Error while sending data to api! ' + str(e))
